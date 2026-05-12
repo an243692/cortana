@@ -174,4 +174,10 @@ Usa las herramientas disponibles para consultar datos reales de la base de datos
 });
 
 const PORT = process.env.PORT || 7071;
-app.listen(PORT, () => console.log(`Agente IA La Salle backend corriendo en http://localhost:${PORT}`));
+
+// Solo escuchar en local, Vercel usa el export
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => console.log(`Agente IA La Salle backend corriendo en http://localhost:${PORT}`));
+}
+
+module.exports = app;
