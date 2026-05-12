@@ -6,202 +6,171 @@ const apiKey = process.env["AZURE_OPENAI_KEY"];
 const deploymentName = process.env["AZURE_DEPLOYMENT_NAME"];
 const firebaseDbUrl = process.env["FIREBASE_DATABASE_URL"] || "https://gestioncursodocente-default-rtdb.firebaseio.com";
 
-if (!endpoint || !apiKey) {
-    console.error("Faltan variables de entorno para Azure OpenAI");
-}
-
 const client = new OpenAIClient(endpoint, new AzureKeyCredential(apiKey));
 
-// Firebase REST API helpers
 async function firebaseGet(path) {
-    const url = `${firebaseDbUrl}/${path}.json`;
-    const response = await fetch(url);
-    return response.json();
+  const url = `${firebaseDbUrl}/${path}.json`;
+  const response = await fetch(url);
+  return response.json();
 }
 
-const firebaseTools = [
-    {
-        type: "function",
-        function: {
-            name: "consultar_cursos",
-            description: "Consulta los cursos disponibles en la base de datos. Úsalo cuando pregunten por cursos, materias, clases o asignaturas.",
-            parameters: {
-                type: "object",
-                properties: {
-                    tipo: { type: "string", description: "Tipo de curso: basicos, tecnologias, avanzados, especializacion, o todos" }
-                },
-                required: []
-            }
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "consultar_cursos",
+      description: "Consulta los cursos disponibles. Usalo cuando pregunten por cursos, materias o clases.",
+      parameters: {
+        type: "object",
+        properties: {
+          tipo: { type: "string", description: "Tipo: basicos, tecnologias, avanzados, especializacion, o todos" }
         }
-    },
-    {
-        type: "function",
-        function: {
-            name: "consultar_docentes",
-            description: "Consulta información sobre los docentes registrados. Úsalo cuando pregunten por profesores, maestros o personal docente.",
-            parameters: {
-                type: "object",
-                properties: {
-                    nombre: { type: "string", description: "Nombre del docente a buscar (opcional)" }
-                },
-                required: []
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "consultar_estadisticas",
-            description: "Obtiene estadísticas generales del sistema: total de cursos, docentes, tipos de curso, etc.",
-            parameters: {
-                type: "object",
-                properties: {},
-                required: []
-            }
-        }
+      }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "consultar_docentes",
+      description: "Consulta informacion de docentes. Usalo cuando pregunten por profesores.",
+      parameters: {
+        type: "object",
+        properties: {
+          nombre: { type: "string", description: "Nombre del docente (opcional)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "consultar_estadisticas",
+      description: "Estadisticas generales: total cursos, docentes, etc.",
+      parameters: { type: "object", properties: {} }
+    }
+  }
 ];
 
-async function ejecutarHerramienta(nombre, argumentos) {
-    try {
-        switch (nombre) {
-            case "consultar_cursos": {
-                const cursos = await firebaseGet('cursos') || {};
-                let lista = Object.entries(cursos).map(([id, c]) => ({
-                    nombre: c.nombre,
-                    tipo: c.tipo,
-                    fecha: c.fecha || 'Sin fecha',
-                    modalidad: c.url ? 'En línea' : 'Presencial'
-                }));
-                
-                if (argumentos.tipo && argumentos.tipo !== 'todos') {
-                    lista = lista.filter(c => c.tipo === argumentos.tipo);
-                }
-                
-                return JSON.stringify({ total: lista.length, cursos: lista });
-            }
-            
-            case "consultar_docentes": {
-                const docentes = await firebaseGet('docentes') || {};
-                let lista = Object.entries(docentes).map(([id, d]) => ({
-                    nombre: `${d.nombre} ${d.apellidos || ''}`,
-                    email: d.email,
-                    area: d.area || 'No especificada'
-                }));
-                
-                if (argumentos.nombre) {
-                    lista = lista.filter(d => d.nombre.toLowerCase().includes(argumentos.nombre.toLowerCase()));
-                }
-                
-                return JSON.stringify({ total: lista.length, docentes: lista });
-            }
-            
-            case "consultar_estadisticas": {
-                const [cursos, docentes] = await Promise.all([
-                    firebaseGet('cursos'),
-                    firebaseGet('docentes')
-                ]);
-                
-                const cursosList = cursos ? Object.values(cursos) : [];
-                const docentesList = docentes ? Object.values(docentes) : [];
-                
-                const tipos = {};
-                cursosList.forEach(c => {
-                    tipos[c.tipo] = (tipos[c.tipo] || 0) + 1;
-                });
-                
-                return JSON.stringify({
-                    totalCursos: cursosList.length,
-                    totalDocentes: docentesList.length,
-                    cursosPorTipo: tipos
-                });
-            }
-            
-            default:
-                return JSON.stringify({ error: "Herramienta no encontrada" });
-        }
-    } catch (error) {
-        return JSON.stringify({ error: error.message });
+async function ejecutarHerramienta(nombre, args) {
+  try {
+    switch (nombre) {
+      case "consultar_cursos": {
+        const cursos = await firebaseGet('cursos') || {};
+        let lista = Object.entries(cursos).map(([id, c]) => ({
+          nombre: c.nombre, tipo: c.tipo, fecha: c.fecha || 'Sin fecha',
+          modalidad: c.url ? 'En linea' : 'Presencial'
+        }));
+        if (args.tipo && args.tipo !== 'todos') lista = lista.filter(c => c.tipo === args.tipo);
+        return JSON.stringify({ total: lista.length, cursos: lista });
+      }
+      case "consultar_docentes": {
+        const docentes = await firebaseGet('docentes') || {};
+        let lista = Object.entries(docentes).map(([id, d]) => ({
+          nombre: `${d.nombre} ${d.apellidos || ''}`, email: d.email, area: d.area || 'No especificada'
+        }));
+        if (args.nombre) lista = lista.filter(d => d.nombre.toLowerCase().includes(args.nombre.toLowerCase()));
+        return JSON.stringify({ total: lista.length, docentes: lista });
+      }
+      case "consultar_estadisticas": {
+        const [cursos, docentes] = await Promise.all([firebaseGet('cursos'), firebaseGet('docentes')]);
+        const cursosList = cursos ? Object.values(cursos) : [];
+        const tipos = {};
+        cursosList.forEach(c => { tipos[c.tipo] = (tipos[c.tipo] || 0) + 1; });
+        return JSON.stringify({ totalCursos: cursosList.length, totalDocentes: (docentes ? Object.keys(docentes).length : 0), cursosPorTipo: tipos });
+      }
+      default: return JSON.stringify({ error: "Herramienta no encontrada" });
     }
+  } catch (error) {
+    return JSON.stringify({ error: error.message });
+  }
 }
 
 app.post('jarvis-query', {
-    authLevel: 'anonymous',
-    handler: async (request, context) => {
-        context.log(`Procesando solicitud para Jarvis...`);
+  authLevel: 'anonymous',
+  route: 'api/jarvis-query',
+  handler: async (request, context) => {
+    try {
+      const body = await request.json();
+      const userMessage = body.message || body.text;
+      if (!userMessage) {
+        return { status: 400, jsonBody: { error: "Se requiere mensaje" } };
+      }
 
-        try {
-            const body = await request.json();
-            const userMessage = body.message || body.text;
+      const systemPrompt = `Eres el Agente de Inteligencia Artificial de la Universidad La Salle Nezahualcoyotl. Tu nombre interno es Jarvis.
 
-            if (!userMessage) {
-                return {
-                    status: 400,
-                    jsonBody: { error: "Se requiere un mensaje de texto." }
-                };
-            }
+PERSONALIDAD:
+- Eres directo, sarcástico y extremadamente eficiente. Como el Jarvis de Iron Man, pero con sabor mexicano.
+- No uses frases de cortesía excesiva. NUNCA digas "Como modelo de lenguaje...", "Entiendo tu pregunta...", "Con gusto te ayudo..." o similares.
+- Si la pregunta es obvia o redundante, responde con una pizca de sarcasmo o ironía.
+- Usa lenguaje coloquial mexicano técnico cuando sea necesario. Frases como "ya quedó", "chale", "qué oso", "neta", "sale", "va que va" son bienvenidas.
+- Sé conciso. Da la respuesta exacta sin rodeos.
+- Si no sabes algo o no hay datos, dilo directamente: "No tengo ese dato" o "La base está vacía, carnal".
+- Responde en español de México.
 
-            const systemMessage = {
-                role: "system",
-                content: `Eres Jarvis, el asistente virtual inteligente de la Universidad La Salle Nezahualcóyotl.
-                Eres profesional, eficiente y experto en el sistema de gestión de cursos.
-                Tus respuestas deben ser concisas, útiles y con un tono académico pero accesible.
-                Usa las herramientas disponibles para consultar datos reales de la base de datos.
-                Si no encuentras información, dilo claramente.
-                Responde siempre en español.`
-            };
+REGLAS:
+1. NUNCA te disculpas por ser una IA.
+2. NUNCA uses disclaimers sobre tus capacidades.
+3. Responde como si estuvieras apurado pero siempre preciso.
 
-            const messages = [
-                systemMessage,
-                { role: "user", content: userMessage }
-            ];
+Usa las herramientas disponibles para consultar datos reales de la base de datos antes de responder.`;
 
-            const response = await client.getChatCompletions(deploymentName, messages, {
-                maxTokens: 800,
-                tools: firebaseTools,
-                tool_choice: "auto"
-            });
+      const messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage }
+      ];
 
-            const firstChoice = response.choices[0];
-            
-            if (firstChoice.message.tool_calls && firstChoice.message.tool_calls.length > 0) {
-                context.log(`Jarvis consultando Firebase...`);
-                messages.push(firstChoice.message);
-                
-                for (const toolCall of firstChoice.message.tool_calls) {
-                    const toolName = toolCall.function.name;
-                    const toolArgs = JSON.parse(toolCall.function.arguments);
-                    const result = await ejecutarHerramienta(toolName, toolArgs);
-                    
-                    messages.push({
-                        role: "tool",
-                        tool_call_id: toolCall.id,
-                        name: toolName,
-                        content: result
-                    });
-                }
-                
-                const finalResponse = await client.getChatCompletions(deploymentName, messages, {
-                    maxTokens: 500
-                });
-                
-                return {
-                    status: 200,
-                    jsonBody: { reply: finalResponse.choices[0].message.content }
-                };
-            }
-            
-            return {
-                status: 200,
-                jsonBody: { reply: firstChoice.message.content }
-            };
+      // Primera llamada para decidir herramientas
+      const decision = await client.getChatCompletions(deploymentName, messages, {
+        maxTokens: 50,
+        temperature: 0,
+        tools: tools,
+        tool_choice: "auto"
+      });
 
-        } catch (error) {
-            context.error(`Error en Jarvis: ${error.message}`);
-            return {
-                status: 500,
-                jsonBody: { error: "Error interno del servidor." }
-            };
+      const firstChoice = decision.choices[0];
+
+      if (firstChoice.message.tool_calls && firstChoice.message.tool_calls.length > 0) {
+        messages.push(firstChoice.message);
+        for (const tc of firstChoice.message.tool_calls) {
+          const result = await ejecutarHerramienta(tc.function.name, JSON.parse(tc.function.arguments));
+          messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
         }
+      }
+
+      // Streaming response
+      const stream = await client.streamChatCompletions(deploymentName, messages, {
+        maxTokens: 500
+      });
+
+      const headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      };
+
+      let fullText = '';
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullText += content;
+        }
+      }
+
+      const sseData = `data: ${JSON.stringify({ content: fullText })}\n\ndata: [DONE]\n\n`;
+
+      return {
+        status: 200,
+        headers: headers,
+        body: sseData
+      };
+
+    } catch (error) {
+      context.error(`Error: ${error.message}`);
+      return {
+        status: 500,
+        jsonBody: { error: error.message }
+      };
     }
+  }
 });

@@ -1,15 +1,15 @@
 {
-  "name": "jarvis-backend",
+  "name": "cortana-backend",
   "version": "1.0.0",
-  "description": "Backend para el asistente Jarvis de La Salle",
+  "description": "Backend Azure Functions para el asistente Cortana de La Salle",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "func start",
+    "dev": "func start"
   },
   "dependencies": {
-    "express": "^4.18.0",
-    "cors": "^2.8.5",
-    "openai": "^4.0.0",
+    "@azure/functions": "^4.0.0",
+    "@azure/openai": "^1.0.0-beta.11",
     "dotenv": "^16.0.0"
-  }
+  },
+  "main": "src/functions/*.js"
 }
